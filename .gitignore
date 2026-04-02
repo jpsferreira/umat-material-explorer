@@ -6,3 +6,4 @@ sga/sga_fitting
 *.eps
 stress_curves/
 ga.restart
+fitting/sga_fitting
