@@ -1,6 +1,6 @@
 FC      = gfortran
 FFLAGS  = -O2
-UMAT    = ../umat/umat_gho.for ../umat/resetdfgr.for
+UMAT    = ../umat/umat.for ../umat/resetdfgr.for
 
 all: cyclic
 

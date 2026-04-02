@@ -1,6 +1,8 @@
 # UMAT Material Explorer
 
-Explore the mechanical behavior of soft biological tissues under different loading scenarios and fit material parameters to experimental data. Uses a standalone GHO (Generalized Humphrey-Ogden) viscoelastic UMAT — no ABAQUS required.
+Explore constitutive material behavior under different loading scenarios and fit material parameters to experimental data. Works with any ABAQUS-compatible UMAT subroutine — no ABAQUS installation required.
+
+Ships with a GHO (Generalized Humphrey-Ogden) viscoelastic UMAT as a working example. Replace it with your own UMAT to explore any material model.
 
 ## Loading Scenarios
 
@@ -17,7 +19,7 @@ Oscillatory loading to characterize viscoelastic behavior:
 - **Amplitude sweeps**: same quantities vs strain amplitude
 
 ### Parameter Fitting (`fitting/`)
-Genetic algorithm (SGA) to fit material parameters (C10, K1, K2, kappa) to experimental PK2 stress-strain data from uniaxial tests.
+Genetic algorithm (SGA) to fit material parameters to experimental stress-strain data from uniaxial tests.
 
 ## Prerequisites
 
@@ -31,40 +33,48 @@ Genetic algorithm (SGA) to fit material parameters (C10, K1, K2, kappa) to exper
 # Build all
 make
 
-# Run monotonic tests
+# Run monotonic loading
 make -C monotonic run
 
-# Run cyclic tests
+# Run cyclic loading
 make -C cyclic run
 
 # Run parameter fitting
 make -C fitting run
 ```
 
-## Material Model
+## Using Your Own UMAT
 
-The GHO model combines:
+The test drivers call the standard ABAQUS `subroutine umat(...)` interface. To use a different material model:
+
+1. Replace `umat/umat.for` with your UMAT source (keep the same filename, or update the Makefiles)
+2. Update `umat/param_umat.inc` with your NSDV (number of state variables)
+3. Edit the PROPS assignments in the test driver (`monotonic.f90`, `cyclic.f90`) to match your material parameters
+4. For the fitting module: update `fitting/umat.for` and the parameter bounds in `fitting/ga.inp`
+
+## Included Example: GHO Viscoelastic Model
+
+The shipped UMAT implements:
 - **Isotropic matrix**: Neo-Hookean (C10, C01)
 - **Anisotropic fibers**: HGO with dispersion (K1, K2, kappa)
 - **Viscoelasticity**: Generalized Maxwell (up to 3 branches)
 - **Volumetric**: Penalty formulation (KBULK)
 
-The UMAT source is in `umat/umat_gho.for` (shared by monotonic and cyclic tests). The fitting module uses its own UMAT variant in `fitting/umat_gho.for`.
-
 ## Project Structure
 
 ```
 umat/                 Shared UMAT source and includes
-  umat_gho.for          GHO viscoelastic constitutive model
-  param_umat.inc        Material parameters and dimensions
+  umat.for              Constitutive model (replace with your own)
+  param_umat.inc        State variable dimensions
   aba_param.inc         ABAQUS compatibility include
   resetdfgr.for         Deformation gradient reset utility
-  fibers.inp            Fiber orientation data
+  fibers.inp            Fiber orientation data (model-specific)
 
-monotonic/            Monotonic loading test driver
-cyclic/               Cyclic loading test driver (freq + amplitude sweeps)
+monotonic/            Monotonic loading driver
+cyclic/               Cyclic loading driver (freq + amplitude sweeps)
 fitting/              Genetic algorithm parameter fitting
+  umat.for              Fitting-specific UMAT variant
   sga.f95               Simple Genetic Algorithm implementation
-  soft_tissue.csv       Experimental data (uniaxial PK2 stress-strain)
+  soft_tissue.csv       Experimental data (uniaxial stress-strain)
   ga.inp                GA configuration (population, generations, bounds)
 ```
