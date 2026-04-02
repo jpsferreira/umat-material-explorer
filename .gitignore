@@ -1,0 +1,8 @@
+*.o
+*.mod
+cyclic/cyclic
+monotonic/monotonic
+sga/sga_fitting
+*.eps
+stress_curves/
+ga.restart
