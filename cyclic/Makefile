@@ -1,10 +1,11 @@
 FC      = gfortran
-FFLAGS  = -O2
+FFLAGS  = -O2 -Wall
 UMAT    = ../umat/umat.for ../umat/resetdfgr.for
+INCS    = ../umat/param_umat.inc ../umat/aba_param.inc
 
 all: cyclic
 
-cyclic: cyclic.f90 $(UMAT)
+cyclic: cyclic.f90 $(UMAT) $(INCS)
 	$(FC) $(FFLAGS) -I../umat -o $@ $(UMAT) $<
 
 run: cyclic

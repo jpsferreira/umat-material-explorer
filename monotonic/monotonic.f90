@@ -16,20 +16,17 @@ DRPLDE(NTENS),STRAN(NTENS),DSTRAN(NTENS),TIME(2),PREDEF(1),DPRED(1),            
 PROPS(NPROPS),COORDS(3),DROT(3,3),DFGRD0(3,3),DFGRD1(3,3)
 
 CHARACTER*8 filename
-integer un
 
 real*8,ALLOCATABLE::curvepoints(:,:)
 real*8::maxstresstime,maxstress,maxgammatime,maxgamma,minstresstime,minstress
 real*8:: maxstretch, maxstretchtime
 real*8:: delta,lossmodulus
 
-i=1.0d0
-j=1.0d0
-DO i=1,NTENS
-    DO j=1,NTENS
-        DDSDDE(i,j)=0.0D0
+DO I1=1,NTENS
+    DO J1=1,NTENS
+        DDSDDE(I1,J1)=0.0D0
     ENDDO
-    STRESS(i)=0.0D0
+    STRESS(I1)=0.0D0
 ENDDO
 !!!
 time(1)=ZERO
@@ -86,16 +83,9 @@ DSTRETCH    = (STRETCH_MAX-STRETCH_INITIAL)/NSTEPS
 GAMMA_MAX = 0.6D0
 GAMMA_INITIAL = -.6D0
 DGAMMA   = (GAMMA_MAX-GAMMA_INITIAL)/NSTEPS
-!################################### |||   NO DEFORMATION  ||| ##################################!
-!  DFGRD1(1,1)=  ONE
-!  DFGRD1(1,2)=  ZERO
-!  DFGRD1(1,3)=  ZERO
-!  DFGRD1(2,1)=  ZERO
-!  DFGRD1(2,2)=  ONE
-!  DFGRD1(2,3)=  ZERO
-!  DFGRD1(3,1)=  ZERO
-!  DFGRD1(3,2)=  ZERO
-!  DFGRD1(3,3)=  ONE
+!
+! Create output directory
+CALL SYSTEM('mkdir -p stress_curves')
 !################################## |||   UNIAXIAL   ||| ################################!
  CALL RESETDFGRD(DFGRD1,NDI)
  OPEN (UNIT=150, FILE='stress_curves/uniaxial.out', STATUS='UNKNOWN')
@@ -120,7 +110,6 @@ DFGRD1(3,3)=ONE/SQRT(STRETCH)
     STRETCH = STRETCH + DSTRETCH
 !   
 ENDDO
-! CALL SYSTEM('gnuplot -p data_uniaxial.plt')
 close(150)
 !################################## |||   BIAXIAL   ||| ################################!
 CALL RESETDFGRD(DFGRD1,NDI)
@@ -198,6 +187,6 @@ DO KSTEP=1,NSTEPS
 ENDDO
 close(153)
 ! !################################################################################################!
-CALL SYSTEM('gnuplot -p data_monotonic.plt')
+CALL SYSTEM('gnuplot -p plots/data_monotonic.plt')
 !!################################################################################################!
 END PROGRAM

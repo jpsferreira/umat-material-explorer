@@ -1,9 +1,25 @@
 *.o
 *.mod
-cyclic/cyclic
-monotonic/monotonic
-sga/sga_fitting
 *.eps
 stress_curves/
 ga.restart
+ga.out
+
+# Binaries
+cyclic/cyclic
+monotonic/monotonic
 fitting/sga_fitting
+
+# Runtime symlinks
+cyclic/fibers.inp
+monotonic/fibers.inp
+
+# Fitting output
+fitting/plot_.out
+fitting/plot_r2.out
+fitting/par_.out
+
+# Editor files
+*~
+*.swp
+.#*

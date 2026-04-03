@@ -21,7 +21,7 @@ make -C fitting run      # genetic algorithm parameter fitting
 make clean
 ```
 
-Compiler: `gfortran` with `-O2` optimization. Visualization: `gnuplot` (optional, called automatically after runs).
+Compiler: `gfortran` with `-O2 -Wall`. Visualization: `gnuplot` (optional, called automatically after runs).
 
 ## Architecture
 
@@ -38,11 +38,47 @@ The core pattern: each module is a standalone Fortran program that sets up defor
 
 ### Key Conventions
 
-- Material properties are assigned positionally in the PROPS array: PROPS(1)=KBULK, PROPS(2)=C10, PROPS(3)=C01, PROPS(4)=K1, PROPS(5)=K2, PROPS(6)=kdisp, PROPS(7..13)=viscoelastic Maxwell parameters.
-- State variable count (NSDV) is set in `param_umat.inc` — must match between UMAT and drivers.
-- The fitting module has its own `param_umat.inc`, `aba_param.inc`, and `umat.for` (may differ from the shared version in `umat/`).
 - Output goes to `stress_curves/` directories; gnuplot scripts in `plots/` subdirectories visualize results.
 - Fiber orientation data is read from `fibers.inp` (symlinked from `umat/` at runtime via `make run`).
+
+### PROPS Array Layout (shared UMAT, NPROPS=13)
+
+| Index | Parameter | Description |
+|-------|-----------|-------------|
+| 1 | KBULK | Bulk modulus / penalty parameter for near-incompressibility |
+| 2 | C10 | Neo-Hookean coefficient (isotropic matrix) |
+| 3 | C01 | Neo-Hookean coefficient (isotropic matrix) |
+| 4 | K1 | HGO fiber stiffness |
+| 5 | K2 | HGO fiber nonlinearity exponent |
+| 6 | kdisp | Fiber dispersion parameter (kappa) |
+| 7 | V | Number of active Maxwell branches (1–3) |
+| 8 | tau1 | Relaxation time, Maxwell branch 1 |
+| 9 | theta1 | Viscous weight, Maxwell branch 1 |
+| 10 | tau2 | Relaxation time, Maxwell branch 2 |
+| 11 | theta2 | Viscous weight, Maxwell branch 2 |
+| 12 | tau3 | Relaxation time, Maxwell branch 3 |
+| 13 | theta3 | Viscous weight, Maxwell branch 3 |
+
+The fitting module uses only NPROPS=6 (indices 1–6) since it fits the elastic response without viscoelasticity.
+
+### State Variables (STATEV)
+
+The shared UMAT uses NSDV=27. State variables store the viscous overstress tensor (HV, 3x3) for each Maxwell branch:
+- STATEV(1–9): HV for Maxwell branch 1 (row-major 3x3)
+- STATEV(10–18): HV for Maxwell branch 2
+- STATEV(19–27): HV for Maxwell branch 3
+
+See `HVREAD`/`HVWRITE` subroutines in `umat/umat.for` for the packing layout.
+
+### Fitting Module Divergence
+
+The `fitting/` module intentionally maintains its own copy of the UMAT with key differences from `umat/umat.for`:
+- **No viscoelasticity** — `INITIALIZE`, `SDVREAD`, `SDVWRITE` omit the viscous parameter `VV`; no `VISCO` call.
+- **Fewer state variables** — NSDV=9 (vs 27), NSTATEV=3 in the driver.
+- **Fewer properties** — NPROPS=6 (elastic only, no Maxwell parameters).
+- STATEV(3) stores the first Piola-Kirchhoff stress PK1(1,1) for comparing against experimental data.
+
+When updating the shared UMAT, the fitting copy must be updated independently. The two are not expected to stay in sync.
 
 ### Replacing the UMAT
 
