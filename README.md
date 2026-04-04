@@ -54,7 +54,7 @@ Stretch range: 1.0 to 1.5 (400 steps). Shear range: -0.6 to +0.6 (400 steps).
 
 ### 2. Cyclic Loading — Frequency Sweep (`cyclic/`)
 
-Oscillatory loading across 61 log-spaced frequencies (0.003 to 300 Hz) to extract viscoelastic properties. Fixed amplitude: 0.05 (stretch) / 0.3 (shear). Three full cycles per frequency point.
+Oscillatory loading across 61 log-spaced frequencies (0.003 to 3 Hz) to extract viscoelastic properties. Fixed amplitude: 0.05 (stretch) / 0.3 (shear). Three full cycles per frequency point.
 
 | Test | Summary Output | Individual Cycles |
 |------|---------------|-------------------|

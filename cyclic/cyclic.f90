@@ -169,7 +169,7 @@ DO I1=1,NTESTSF
     maxstretch, maxstretchtime, maxgamma, maxgammatime, &
     storagemodulus, lossmodulus, tandelta, delta, un, &
     'stress_curves/freq_sweep/equibiaxial/')
-  write(151,*) CURVEPOINTS(I1,1),storagemodulus,tandelta,lossmodulus
+  write(151,*) CURVEPOINTS(I1,1),storagemodulus,lossmodulus,tandelta
 ENDDO
 close(151)
 
@@ -189,7 +189,7 @@ DO I1=1,NTESTSF
     maxstretch, maxstretchtime, maxgamma, maxgammatime, &
     storagemodulus, lossmodulus, tandelta, delta, un, &
     'stress_curves/freq_sweep/shear/')
-  write(152,*) CURVEPOINTS(I1,1),storagemodulus,tandelta,lossmodulus
+  write(152,*) CURVEPOINTS(I1,1),storagemodulus,lossmodulus,tandelta
 ENDDO
 close(152)
 
@@ -209,7 +209,7 @@ DO I1=1,NTESTSF
     maxstretch, maxstretchtime, maxgamma, maxgammatime, &
     storagemodulus, lossmodulus, tandelta, delta, un, &
     'stress_curves/freq_sweep/sshear/')
-  write(153,*) CURVEPOINTS(I1,1),storagemodulus,tandelta,lossmodulus
+  write(153,*) CURVEPOINTS(I1,1),storagemodulus,lossmodulus,tandelta
 ENDDO
 close(153)
 
@@ -277,7 +277,7 @@ DO I1=1,NTESTSAS
     maxstretch, maxstretchtime, maxgamma, maxgammatime, &
     storagemodulus, lossmodulus, tandelta, delta, un, &
     'stress_curves/amp_sweep/shear/')
-  write(152,*) AMP_GAMMA,storagemodulus,tandelta,lossmodulus
+  write(152,*) AMP_GAMMA,storagemodulus,lossmodulus,tandelta
 ENDDO
 close(152)
 
@@ -298,7 +298,7 @@ DO I1=1,NTESTSAS
     maxstretch, maxstretchtime, maxgamma, maxgammatime, &
     storagemodulus, lossmodulus, tandelta, delta, un, &
     'stress_curves/amp_sweep/sshear/')
-  write(153,*) AMP_GAMMA,storagemodulus,tandelta,lossmodulus
+  write(153,*) AMP_GAMMA,storagemodulus,lossmodulus,tandelta
 ENDDO
 close(153)
 !
@@ -341,7 +341,7 @@ real*8 FREQ, AMP_STRETCH, PRE_STRETCH, AMP_GAMMA, PRE_GAMMA
 real*8 maxstress, minstress, maxstresstime, minstresstime
 real*8 maxstretch, maxstretchtime, maxgamma, maxgammatime
 real*8 storagemodulus, lossmodulus, tandelta, delta
-real*8 F, CYCLETIME, STRETCH, GAMMA, stressamp, amp_val, PI
+real*8 F, CYCLETIME, STRETCH, GAMMA, amp_val, PI
 real*8 SSE, SPD, SCD, RPL, DRPLDT, DTIME, TEMP, DTEMP, PNEWDT, CELENT
 INTEGER stress_idx
 
@@ -439,7 +439,6 @@ DO KK = 1, NCYCLES
 ENDDO
 
 ! Compute viscoelastic moduli
-stressamp = maxstress - minstress
 IF (deform_type .LE. 2) THEN
   delta = maxstretchtime - maxstresstime
   amp_val = AMP_STRETCH

@@ -261,7 +261,7 @@ def gen_monotonic():
 
 def gen_freq_sweep():
     mp = SVGMultiPlot(650, 700, 2)
-    freqs = logspace(0.003, 300, 61)
+    freqs = logspace(0.003, 3, 61)
 
     # Storage modulus
     p1 = mp.add_subplot()
@@ -270,7 +270,7 @@ def gen_freq_sweep():
     y_sh = [storage_modulus(f, 2.0, 1.5, 0.5, 0.5, 0.05) for f in freqs]
     y_ss = [storage_modulus(f, 1.8, 1.2, 0.5, 0.4, 0.05) for f in freqs]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p1.add_axes("Frequency (Hz)", "Storage Modulus G' (Pa)", 0.003, 300,
+    p1.add_axes("Frequency (Hz)", "Storage Modulus G' (Pa)", 0.003, 3,
                 min(all_y)*0.8, max(all_y)*1.3, logx=True, logy=True,
                 title="Frequency Sweep: Storage Modulus")
     p1.add_line(freqs, y_uni, 0, "Uniaxial")
@@ -286,7 +286,7 @@ def gen_freq_sweep():
     y_sh = [loss_modulus(f, 2.0, 1.5, 0.5, 0.5, 0.05) for f in freqs]
     y_ss = [loss_modulus(f, 1.8, 1.2, 0.5, 0.4, 0.05) for f in freqs]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p2.add_axes("Frequency (Hz)", "Loss Modulus G'' (Pa)", 0.003, 300,
+    p2.add_axes("Frequency (Hz)", "Loss Modulus G'' (Pa)", 0.003, 3,
                 min(all_y)*0.5, max(all_y)*1.5, logx=True, logy=True,
                 title="Frequency Sweep: Loss Modulus")
     p2.add_line(freqs, y_uni, 0, "Uniaxial")
