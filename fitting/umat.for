@@ -791,9 +791,10 @@ C
       CHARACTER(256) FILENAME
       CHARACTER(256) JOBDIR
       INTEGER  LENJOBDIR
-      
+      LOGICAL FEXIST
+
       REAL*8 FIBORI(NELEM,4)
-      
+
 C     LOP=0 --> START OF THE ANALYSIS
       IF(LOP.EQ.0.OR.LOP.EQ.4) THEN
 C
@@ -801,12 +802,17 @@ C
 C        DIR1 DEFNIED IN param_umat.inc
          FILENAME=JOBDIR(:LENJOBDIR)//'/'//DIR1
 C
+         INQUIRE(FILE=FILENAME, EXIST=FEXIST)
+         IF (.NOT. FEXIST) THEN
+           WRITE(*,*) 'ERROR: Fiber file not found: ',TRIM(FILENAME)
+           STOP 1
+         END IF
          OPEN(15,FILE=FILENAME)
          DO I=1,NELEM
             READ(15,*) (FIBORI(I,J),J=1,4)
          END DO
           CLOSE(15)
-!C         
+!C
       END IF    
 C
       RETURN
