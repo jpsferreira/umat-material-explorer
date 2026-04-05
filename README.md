@@ -89,8 +89,8 @@ Oscillatory loading across log-spaced amplitudes at fixed frequency (1 Hz). Thre
   <img src="docs/cyclic_amp.svg" alt="Amplitude sweep: storage and loss modulus vs amplitude" width="600">
 </p>
 
-**Top panel**: Storage modulus G' decreases with increasing amplitude — characteristic nonlinear softening (Payne effect in soft tissues).
-**Bottom panel**: Loss modulus G'' varies with amplitude, reflecting amplitude-dependent dissipation.
+**Top panel**: Storage modulus G' increases with amplitude — the GHO model is strain-stiffening (exponential fiber term), so larger oscillations produce higher apparent stiffness.
+**Bottom panel**: Loss modulus G'' follows the same trend, reflecting the amplitude-dependent nonlinear response.
 
 ---
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Generate representative SVG plots for README documentation.
 Uses only Python standard library (no numpy/matplotlib needed).
-These plots show typical output from the GHO viscoelastic UMAT model.
+
+These plots approximate the output from the shipped GHO viscoelastic UMAT
+with the default parameters in monotonic.f90 and cyclic.f90.
 """
 import math
 import os
@@ -17,48 +19,108 @@ def logspace(a, b, n):
     logs = linspace(math.log10(a), math.log10(b), n)
     return [10**x for x in logs]
 
-# --- Material model approximations (representative curves) ---
+# ---------------------------------------------------------------------------
+# Material model formulas matching the shipped GHO UMAT
+#
+# Monotonic driver: C10=1, C01=0, K1=1, K2=1, kdisp=0, KBULK=1000
+# Fiber direction:  m0 = (1, 0, 0)  (single family, from fibers.inp)
+#
+# For incompressible uniaxial/biaxial (J=1):
+#   sigma_NH  = 2*C10*(B - (trB/3)*I)  →  sigma_11 derived from free-face condition
+#   sigma_HGO = push-forward of 2*K1*E*exp(K2*E^2) * M0
+#
+# kdisp=0 means (1-3*kappa)=1, so E = I4 - 1 = lambda^2 - 1 (fiber along axis 1)
+# ---------------------------------------------------------------------------
 
-def neo_hookean_uniaxial(lam, c10=1.0):
-    """Cauchy stress for Neo-Hookean uniaxial tension."""
-    return 2 * c10 * (lam**2 - 1.0/lam)
+def uniaxial_cauchy(lam, c10=1.0, k1=1.0, k2=1.0):
+    """Cauchy stress sigma_11 for uniaxial tension (incompressible, fiber along axis 1)."""
+    # Neo-Hookean: sigma_11 - sigma_22 = 2*C10*(lam^2 - 1/lam)
+    sig_nh = 2 * c10 * (lam**2 - 1.0 / lam)
+    # HGO fiber (kdisp=0, fiber along axis 1): I4 = lam^2, E = lam^2 - 1
+    E = max(lam**2 - 1, 0)
+    # sigma_aniso_11 = 2*K1*lam^2*E*exp(K2*E^2), sigma_aniso_22 = 0
+    sig_hgo = 2 * k1 * lam**2 * E * math.exp(k2 * E**2) if E > 0 else 0
+    return sig_nh + sig_hgo
 
-def hgo_fiber_uniaxial(lam, k1=1.0, k2=1.0, kappa=0.0):
-    """Approximate HGO fiber contribution for uniaxial."""
-    I4 = lam**2
-    E4 = kappa * (lam**2 + 2.0/lam - 3) + (1-3*kappa) * max(I4 - 1, 0)
-    if E4 > 0:
-        return 2 * k1 * E4 * math.exp(k2 * E4**2) * lam
-    return 0.0
+def biaxial_cauchy(lam, c10=1.0, k1=1.0, k2=1.0):
+    """Cauchy stress sigma_11 for equibiaxial tension (incompressible, fiber along axis 1).
 
-def uniaxial_stress(lam, c10=1.0, k1=1.0, k2=1.0, kappa=0.0):
-    return neo_hookean_uniaxial(lam, c10) + hgo_fiber_uniaxial(lam, k1, k2, kappa)
+    With fiber along axis 1, HGO contribution is identical to uniaxial (I4 = lam^2).
+    Only the Neo-Hookean part differs: sigma_11 - sigma_33 = 2*C10*(lam^2 - 1/lam^4).
+    """
+    sig_nh = 2 * c10 * (lam**2 - 1.0 / lam**4)
+    E = max(lam**2 - 1, 0)
+    sig_hgo = 2 * k1 * lam**2 * E * math.exp(k2 * E**2) if E > 0 else 0
+    return sig_nh + sig_hgo
 
-def biaxial_stress(lam, c10=1.0, k1=0.5, k2=1.0):
-    return 2 * c10 * (lam**2 - 1.0/lam**4) + k1 * max(lam**2 - 1, 0) * math.exp(k2 * max(lam**2-1,0)**2) * lam * 1.5
+def pure_shear_cauchy(gamma, c10=1.0, k1=1.0, k2=1.0):
+    """Cauchy stress sigma_12 for pure shear: F = I + gamma*(e1@e2 + e2@e1).
 
-def shear_stress(gamma, c10=1.0, k1=1.0, k2=1.0):
-    return 2 * c10 * gamma + 0.3 * k1 * gamma * abs(gamma) * math.exp(k2 * gamma**4)
+    J = 1 - gamma^2 (NOT volume-preserving).
+    Neo-Hookean: sigma_12 = (2*C10/J)*B_12 where B_12 = 2*gamma
+    HGO: fiber contributes via F21=gamma push-forward: sigma_aniso_12 = alpha*gamma/J
+         where alpha = 2*K1*E*exp(K2*E^2), E = J^(-2/3)*(1+gamma^2) - 1
+    """
+    J = 1 - gamma**2
+    if J <= 0:
+        return 0
+    # Neo-Hookean shear stress (from B_12 = 2*gamma, deviatoric projection keeps off-diag)
+    sig_nh = (2 * c10 / J) * 2 * gamma
+    # HGO fiber contribution
+    I4 = J**(-2.0/3) * (1 + gamma**2)
+    E = max(I4 - 1, 0)
+    alpha = 2 * k1 * E * math.exp(k2 * E**2) if E > 0 else 0
+    sig_hgo = alpha * gamma / J
+    return sig_nh + sig_hgo
 
-def simple_shear_stress(gamma, c10=1.0, k1=1.0, k2=1.0):
-    return 2 * c10 * gamma + 0.15 * k1 * gamma * abs(gamma) * math.exp(0.5 * k2 * gamma**4)
+def simple_shear_cauchy(gamma, c10=1.0):
+    """Cauchy stress sigma_12 for simple shear: F = I + gamma*e1@e2.
 
-# Viscoelastic moduli (Maxwell model approximation)
-def storage_modulus(freq, g_inf, g1, tau1, g2=0, tau2=1):
+    J = 1 (volume-preserving).
+    Neo-Hookean: sigma_12 = 2*C10*gamma
+    HGO: fiber along axis 1 does NOT contribute to sigma_12 in simple shear
+         because F21=0, so the push-forward of M0=(e1@e1) has no (1,2) component.
+    """
+    return 2 * c10 * gamma
+
+# ---------------------------------------------------------------------------
+# Viscoelastic moduli (Generalized Maxwell)
+#
+# Cyclic driver: tau1=2.0, theta1=0.835, 1 active branch (PROPS(7)=1)
+#
+# Standard decomposition:
+#   G_inf = equilibrium modulus (low frequency)
+#   G1 = theta/(1-theta) * G_inf  (Maxwell branch relaxation strength)
+#   G' = G_inf + G1 * (w*tau)^2 / (1 + (w*tau)^2)
+#   G'' = G1 * (w*tau) / (1 + (w*tau)^2)
+# ---------------------------------------------------------------------------
+
+TAU1 = 2.0
+THETA1 = 0.835
+G1_RATIO = THETA1 / (1 - THETA1)  # = 5.06
+
+def storage_modulus(freq, g_eq):
+    """Storage modulus G' for single Maxwell branch."""
     w = 2 * math.pi * freq
-    G = g_inf
-    for gi, ti in [(g1, tau1), (g2, tau2)]:
-        G += gi * (w*ti)**2 / (1 + (w*ti)**2)
-    return G
+    wt = w * TAU1
+    return g_eq * (1 + G1_RATIO * wt**2 / (1 + wt**2))
 
-def loss_modulus(freq, g_inf, g1, tau1, g2=0, tau2=1):
+def loss_modulus(freq, g_eq):
+    """Loss modulus G'' for single Maxwell branch."""
     w = 2 * math.pi * freq
-    G = 0
-    for gi, ti in [(g1, tau1), (g2, tau2)]:
-        G += gi * (w*ti) / (1 + (w*ti)**2)
-    return G
+    wt = w * TAU1
+    return g_eq * G1_RATIO * wt / (1 + wt**2)
 
-# --- SVG generation ---
+# Equilibrium tangent moduli at the pre-stretch/shear states used in cyclic.f90
+# (computed numerically from the constitutive model at small perturbation)
+# Pre-stretch = 1.1, AMP_STRETCH = 0.05; Pre-gamma = 0.1, AMP_GAMMA = 0.3
+G_EQ_UNIAXIAL = 13.3    # dσ11/dλ at λ=1.1 (NH: 6.05 + HGO: 7.25)
+G_EQ_BIAXIAL = 16.6     # dσ11/dλ at λ=1.1 biaxial (NH: 9.37 + HGO: 7.25)
+G_EQ_PURE_SHEAR = 4.2   # dσ12/dγ at γ≈0 (NH: 4.0 + small HGO)
+G_EQ_SIMPLE_SHEAR = 2.1 # dσ12/dγ at γ=0.1 (NH: 2.0, no HGO fiber contrib)
+
+
+# --- SVG generation (unchanged from original) ---
 
 class SVGPlot:
     def __init__(self, width=600, height=400, margins=None):
@@ -93,10 +155,8 @@ class SVGPlot:
         ml, mt = self.margins['left'], self.margins['top']
         pw, ph = self.plot_w, self.plot_h
 
-        # Background
         self.elements.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="#fafafa" stroke="#ccc" stroke-width="1"/>')
 
-        # Grid lines
         nx, ny = 5, 5
         for i in range(nx + 1):
             if logx:
@@ -106,7 +166,7 @@ class SVGPlot:
             x = self._tx(v, xmin, xmax, logx)
             self.elements.append(f'<line x1="{x:.1f}" y1="{mt}" x2="{x:.1f}" y2="{mt+ph}" stroke="#e5e7eb" stroke-width="0.5"/>')
             if logx:
-                label = f"{v:.1e}" if v < 0.1 or v >= 100 else f"{v:.1f}"
+                label = f"{v:.1e}" if v < 0.1 or v >= 100 else f"{v:.2f}"
             else:
                 label = f"{v:.2g}"
             self.elements.append(f'<text x="{x:.1f}" y="{mt+ph+15}" text-anchor="middle" font-size="11" fill="#555" font-family="Helvetica,Arial,sans-serif">{label}</text>')
@@ -119,18 +179,14 @@ class SVGPlot:
             y = self._ty(v, ymin, ymax, logy)
             self.elements.append(f'<line x1="{ml}" y1="{y:.1f}" x2="{ml+pw}" y2="{y:.1f}" stroke="#e5e7eb" stroke-width="0.5"/>')
             if logy:
-                label = f"{v:.1e}" if v < 0.01 or v >= 100 else f"{v:.2g}"
+                label = f"{v:.1e}" if v < 0.01 or v >= 1000 else f"{v:.2g}"
             else:
                 label = f"{v:.2g}"
             self.elements.append(f'<text x="{ml-8}" y="{y+4:.1f}" text-anchor="end" font-size="11" fill="#555" font-family="Helvetica,Arial,sans-serif">{label}</text>')
 
-        # Axes border
         self.elements.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#333" stroke-width="1.5"/>')
-
-        # Labels
         self.elements.append(f'<text x="{ml + pw/2}" y="{mt + ph + 42}" text-anchor="middle" font-size="13" font-weight="bold" fill="#333" font-family="Helvetica,Arial,sans-serif">{xlabel}</text>')
         self.elements.append(f'<text x="{ml - 50}" y="{mt + ph/2}" text-anchor="middle" font-size="13" font-weight="bold" fill="#333" font-family="Helvetica,Arial,sans-serif" transform="rotate(-90,{ml-50},{mt+ph/2})">{ylabel}</text>')
-
         if title:
             self.elements.append(f'<text x="{ml + pw/2}" y="{mt - 12}" text-anchor="middle" font-size="15" font-weight="bold" fill="#222" font-family="Helvetica,Arial,sans-serif">{title}</text>')
 
@@ -230,25 +286,27 @@ class SVGMultiPlot:
 def gen_monotonic():
     mp = SVGMultiPlot(650, 700, 2)
 
-    # Top: uniaxial + biaxial
+    # Top: uniaxial + biaxial (Cauchy stress vs stretch)
     p1 = mp.add_subplot()
     lams = linspace(1.0, 1.5, 200)
-    y_uni = [uniaxial_stress(l) for l in lams]
-    y_bi = [biaxial_stress(l) for l in lams]
+    y_uni = [uniaxial_cauchy(l) for l in lams]
+    y_bi = [biaxial_cauchy(l) for l in lams]
     ymax = max(max(y_uni), max(y_bi)) * 1.1
-    p1.add_axes("Stretch", "Normal Cauchy Stress", 1.0, 1.5, 0, ymax, title="Monotonic Loading: Tension")
+    p1.add_axes("Stretch", "Normal Cauchy Stress", 1.0, 1.5, 0, ymax,
+                title="Monotonic Loading: Tension")
     p1.add_line(lams, y_uni, 0, "Uniaxial")
     p1.add_line(lams, y_bi, 1, "Equibiaxial")
     p1.add_legend()
 
-    # Bottom: shear
+    # Bottom: pure shear + simple shear (Cauchy sigma_12 vs gamma)
     p2 = mp.add_subplot()
     gammas = linspace(-0.6, 0.6, 200)
-    y_sh = [shear_stress(g) for g in gammas]
-    y_ss = [simple_shear_stress(g) for g in gammas]
+    y_sh = [pure_shear_cauchy(g) for g in gammas]
+    y_ss = [simple_shear_cauchy(g) for g in gammas]
     ymin_s = min(min(y_sh), min(y_ss)) * 1.1
     ymax_s = max(max(y_sh), max(y_ss)) * 1.1
-    p2.add_axes("Amount of Shear", "Shear Stress", -0.6, 0.6, ymin_s, ymax_s, title="Monotonic Loading: Shear")
+    p2.add_axes("Amount of Shear", "Shear Stress", -0.6, 0.6, ymin_s, ymax_s,
+                title="Monotonic Loading: Shear")
     p2.add_line(gammas, y_sh, 2, "Pure Shear")
     p2.add_line(gammas, y_ss, 3, "Simple Shear")
     p2.add_legend()
@@ -263,15 +321,15 @@ def gen_freq_sweep():
     mp = SVGMultiPlot(650, 700, 2)
     freqs = logspace(0.003, 3, 61)
 
-    # Storage modulus
+    # Storage modulus G'
     p1 = mp.add_subplot()
-    y_uni = [storage_modulus(f, 4.0, 3.0, 0.5, 1.0, 0.05) for f in freqs]
-    y_bi = [storage_modulus(f, 6.0, 4.0, 0.5, 1.5, 0.05) for f in freqs]
-    y_sh = [storage_modulus(f, 2.0, 1.5, 0.5, 0.5, 0.05) for f in freqs]
-    y_ss = [storage_modulus(f, 1.8, 1.2, 0.5, 0.4, 0.05) for f in freqs]
+    y_uni = [storage_modulus(f, G_EQ_UNIAXIAL) for f in freqs]
+    y_bi  = [storage_modulus(f, G_EQ_BIAXIAL) for f in freqs]
+    y_sh  = [storage_modulus(f, G_EQ_PURE_SHEAR) for f in freqs]
+    y_ss  = [storage_modulus(f, G_EQ_SIMPLE_SHEAR) for f in freqs]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p1.add_axes("Frequency (Hz)", "Storage Modulus G' (Pa)", 0.003, 3,
-                min(all_y)*0.8, max(all_y)*1.3, logx=True, logy=True,
+    p1.add_axes("Frequency (Hz)", "Storage Modulus G'", 0.003, 3,
+                min(all_y) * 0.8, max(all_y) * 1.3, logx=True, logy=True,
                 title="Frequency Sweep: Storage Modulus")
     p1.add_line(freqs, y_uni, 0, "Uniaxial")
     p1.add_line(freqs, y_bi, 1, "Equibiaxial")
@@ -279,15 +337,15 @@ def gen_freq_sweep():
     p1.add_line(freqs, y_ss, 3, "Simple Shear")
     p1.add_legend()
 
-    # Loss modulus
+    # Loss modulus G''
     p2 = mp.add_subplot()
-    y_uni = [loss_modulus(f, 4.0, 3.0, 0.5, 1.0, 0.05) for f in freqs]
-    y_bi = [loss_modulus(f, 6.0, 4.0, 0.5, 1.5, 0.05) for f in freqs]
-    y_sh = [loss_modulus(f, 2.0, 1.5, 0.5, 0.5, 0.05) for f in freqs]
-    y_ss = [loss_modulus(f, 1.8, 1.2, 0.5, 0.4, 0.05) for f in freqs]
+    y_uni = [loss_modulus(f, G_EQ_UNIAXIAL) for f in freqs]
+    y_bi  = [loss_modulus(f, G_EQ_BIAXIAL) for f in freqs]
+    y_sh  = [loss_modulus(f, G_EQ_PURE_SHEAR) for f in freqs]
+    y_ss  = [loss_modulus(f, G_EQ_SIMPLE_SHEAR) for f in freqs]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p2.add_axes("Frequency (Hz)", "Loss Modulus G'' (Pa)", 0.003, 3,
-                min(all_y)*0.5, max(all_y)*1.5, logx=True, logy=True,
+    p2.add_axes("Frequency (Hz)", "Loss Modulus G''", 0.003, 3,
+                min(all_y) * 0.5, max(all_y) * 1.5, logx=True, logy=True,
                 title="Frequency Sweep: Loss Modulus")
     p2.add_line(freqs, y_uni, 0, "Uniaxial")
     p2.add_line(freqs, y_bi, 1, "Equibiaxial")
@@ -299,74 +357,109 @@ def gen_freq_sweep():
 
 # ============================================================
 # PLOT 3: Amplitude sweep (2 panels)
+#
+# For a strain-stiffening hyperelastic material (GHO), the tangent
+# modulus increases with deformation.  At larger oscillation amplitudes
+# the peak stress grows faster than linearly → apparent G' increases.
 # ============================================================
 
 def gen_amp_sweep():
     mp = SVGMultiPlot(650, 700, 2)
-    amps = logspace(0.01, 1.0, 31)
+    # Range matches cyclic.f90: AMP_MIN=0.01, counter increments by 0.05
+    # 31 stretch amplitudes, 21 shear amplitudes (log-spaced)
+    amps_stretch = logspace(0.01, 0.316, 31)
+    amps_shear = logspace(0.01, 0.1, 21)
 
-    # For amplitude sweep, moduli typically decrease with amplitude (Payne effect)
-    def storage_amp(a, g0, decay):
-        return g0 / (1 + decay * a**1.5)
+    # Amplitude-dependent effective modulus: at each amplitude, the "apparent"
+    # modulus = peak_stress / amplitude.  For strain-stiffening material this
+    # increases with amplitude.  We approximate via the tangent modulus at
+    # pre-stretch + amplitude.
+    def g_eff_uniaxial(amp):
+        lam = 1.1 + amp  # peak stretch
+        return uniaxial_cauchy(lam) / max(amp, 1e-6)
 
-    def loss_amp(a, g0, peak_a, width):
-        return g0 * a / (peak_a + a**2 / peak_a) * width
+    def g_eff_biaxial(amp):
+        lam = 1.1 + amp
+        return biaxial_cauchy(lam) / max(amp, 1e-6)
+
+    def g_eff_pure_shear(amp):
+        return pure_shear_cauchy(amp) / max(amp, 1e-6)
+
+    def g_eff_simple_shear(amp):
+        gamma = 0.1 + amp  # pre-gamma + amplitude
+        return simple_shear_cauchy(gamma) / max(amp, 1e-6)
+
+    # Storage modulus (scale by Maxwell factor at 1 Hz)
+    w = 2 * math.pi * 1.0
+    wt = w * TAU1
+    maxwell_factor = 1 + G1_RATIO * wt**2 / (1 + wt**2)  # ~6.03
+    loss_factor = G1_RATIO * wt / (1 + wt**2)             # ~0.32
 
     p1 = mp.add_subplot()
-    y_uni = [storage_amp(a, 7.0, 2.0) for a in amps]
-    y_bi = [storage_amp(a, 10.0, 2.5) for a in amps]
-    y_sh = [storage_amp(a, 3.5, 1.5) for a in amps]
-    y_ss = [storage_amp(a, 3.0, 1.2) for a in amps]
+    y_uni = [g_eff_uniaxial(a) * maxwell_factor for a in amps_stretch]
+    y_bi  = [g_eff_biaxial(a) * maxwell_factor for a in amps_stretch]
+    y_sh  = [g_eff_pure_shear(a) * maxwell_factor for a in amps_shear]
+    y_ss  = [g_eff_simple_shear(a) * maxwell_factor for a in amps_shear]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p1.add_axes("Amplitude", "Storage Modulus G' (Pa)", 0.01, 1.0,
-                min(all_y)*0.7, max(all_y)*1.3, logx=True, logy=True,
+    p1.add_axes("Amplitude", "Storage Modulus G'", 0.01, 0.316,
+                min(all_y) * 0.7, max(all_y) * 1.3, logx=True, logy=True,
                 title="Amplitude Sweep: Storage Modulus")
-    p1.add_line(amps, y_uni, 0, "Uniaxial")
-    p1.add_line(amps, y_bi, 1, "Equibiaxial")
-    p1.add_line(amps, y_sh, 2, "Pure Shear")
-    p1.add_line(amps, y_ss, 3, "Simple Shear")
+    p1.add_line(amps_stretch, y_uni, 0, "Uniaxial")
+    p1.add_line(amps_stretch, y_bi, 1, "Equibiaxial")
+    p1.add_line(amps_shear, y_sh, 2, "Pure Shear")
+    p1.add_line(amps_shear, y_ss, 3, "Simple Shear")
     p1.add_legend()
 
+    # Loss modulus (proportional to storage via tan(delta))
     p2 = mp.add_subplot()
-    y_uni = [loss_amp(a, 1.5, 0.3, 2.0) for a in amps]
-    y_bi = [loss_amp(a, 2.0, 0.3, 2.5) for a in amps]
-    y_sh = [loss_amp(a, 0.8, 0.3, 1.5) for a in amps]
-    y_ss = [loss_amp(a, 0.6, 0.3, 1.2) for a in amps]
+    y_uni = [g_eff_uniaxial(a) * loss_factor for a in amps_stretch]
+    y_bi  = [g_eff_biaxial(a) * loss_factor for a in amps_stretch]
+    y_sh  = [g_eff_pure_shear(a) * loss_factor for a in amps_shear]
+    y_ss  = [g_eff_simple_shear(a) * loss_factor for a in amps_shear]
     all_y = y_uni + y_bi + y_sh + y_ss
-    p2.add_axes("Amplitude", "Loss Modulus G'' (Pa)", 0.01, 1.0,
-                min(all_y)*0.5, max(all_y)*1.5, logx=True, logy=True,
+    p2.add_axes("Amplitude", "Loss Modulus G''", 0.01, 0.316,
+                min(all_y) * 0.5, max(all_y) * 1.5, logx=True, logy=True,
                 title="Amplitude Sweep: Loss Modulus")
-    p2.add_line(amps, y_uni, 0, "Uniaxial")
-    p2.add_line(amps, y_bi, 1, "Equibiaxial")
-    p2.add_line(amps, y_sh, 2, "Pure Shear")
-    p2.add_line(amps, y_ss, 3, "Simple Shear")
+    p2.add_line(amps_stretch, y_uni, 0, "Uniaxial")
+    p2.add_line(amps_stretch, y_bi, 1, "Equibiaxial")
+    p2.add_line(amps_shear, y_sh, 2, "Pure Shear")
+    p2.add_line(amps_shear, y_ss, 3, "Simple Shear")
     p2.add_legend()
 
     mp.save(os.path.join(DOCS_DIR, "cyclic_amp.svg"))
 
 # ============================================================
 # PLOT 4: Fitting result (experimental + fitted curve)
+#
+# The fitting module optimizes C10, K1, K2, kdisp to match
+# experimental uniaxial PK1 stress from soft_tissue.csv.
+# PK1 = sigma_cauchy / lambda  (for incompressible uniaxial).
 # ============================================================
 
 def gen_fitting():
-    # Real experimental data from soft_tissue.csv
+    # Experimental data from soft_tissue.csv
     exp_stretch = [1, 1.029, 1.058, 1.087, 1.116, 1.145, 1.174, 1.203, 1.232, 1.261,
                    1.29, 1.319, 1.348, 1.377, 1.406, 1.435, 1.464, 1.493, 1.522, 1.551, 1.58]
-    exp_stress = [0.002618, 0.001516, 0.002727, 0.006129, 0.011604, 0.019029, 0.028286,
-                  0.039254, 0.051814, 0.065844, 0.081224, 0.097836, 0.115557, 0.134269,
-                  0.153850, 0.174182, 0.195143, 0.216613, 0.238473, 0.260602, 0.282880]
+    exp_stress  = [0.002618, 0.001516, 0.002727, 0.006129, 0.011604, 0.019029, 0.028286,
+                   0.039254, 0.051814, 0.065844, 0.081224, 0.097836, 0.115557, 0.134269,
+                   0.153850, 0.174182, 0.195143, 0.216613, 0.238473, 0.260602, 0.282880]
 
-    # Generate a fitted curve (representative good fit)
+    # Fitted PK1 stress using the elastic-only UMAT (no viscoelasticity).
+    # PK1_11 = sigma_cauchy_11 / lambda for incompressible uniaxial.
+    # Representative best-fit parameters (illustrative, from grid search):
+    c10_fit = 0.0
+    k1_fit = 0.047
+    k2_fit = 0.13
+
     fit_lams = linspace(1.0, 1.58, 200)
-    # Approximate fitted parameters: c10~0.15, k1~0.5, k2~0.8, kdisp~0.001
     fit_stress = []
-    for l in fit_lams:
-        s = 0.15 * 2 * (l - 1.0/l**2) + 0.5 * max(l**2 - 1, 0) * math.exp(0.8 * max(l**2-1,0)**2) * 0.35
-        fit_stress.append(max(s, 0))
-
-    # Scale fit to match experimental data range
-    scale = exp_stress[-1] / max(fit_stress[-1], 0.001)
-    fit_stress = [s * scale for s in fit_stress]
+    for lam in fit_lams:
+        # Neo-Hookean PK1 = 2*C10*(lam - 1/lam^2)
+        pk1_nh = 2 * c10_fit * (lam - 1.0 / lam**2)
+        # HGO PK1 (fiber along axis 1, kdisp ~ 0):
+        E = max(lam**2 - 1, 0)
+        pk1_hgo = 2 * k1_fit * lam * E * math.exp(k2_fit * E**2) if E > 0 else 0.0
+        fit_stress.append(max(pk1_nh + pk1_hgo, 0))
 
     p = SVGPlot(600, 420)
     ymax = max(max(exp_stress), max(fit_stress)) * 1.15
@@ -375,10 +468,10 @@ def gen_fitting():
     p.add_points(exp_stretch, exp_stress, 0, "Experimental")
     p.add_line(fit_lams, fit_stress, 1, "UMAT Fit")
     p.add_legend(x=p.margins['left'] + 180, y=p.margins['top'] + 15)
-    p.add_annotation("R\u00b2 = 0.9987", 0.05, 0.25)
-    p.add_annotation("C\u2081\u2080 = 1.52e-01", 0.05, 0.32)
-    p.add_annotation("K\u2081  = 4.87e-01", 0.05, 0.39)
-    p.add_annotation("K\u2082  = 7.93e-01", 0.05, 0.46)
+    p.add_annotation(f"C\u2081\u2080 = {c10_fit:.3f}", 0.05, 0.32)
+    p.add_annotation(f"K\u2081  = {k1_fit:.3f}", 0.05, 0.39)
+    p.add_annotation(f"K\u2082  = {k2_fit:.3f}", 0.05, 0.46)
+    p.add_annotation("(representative fit)", 0.05, 0.55)
     p.save(os.path.join(DOCS_DIR, "fitting.svg"))
 
 # ============================================================
@@ -392,9 +485,8 @@ def gen_ga_convergence():
     avg_fitness = []
     best_fitness = []
     for g in gens:
-        # Typical GA convergence curve
         best = 0.5 + 0.4987 * (1 - math.exp(-g / 30))
-        avg = 0.3 + 0.35 * (1 - math.exp(-g / 50)) + 0.05 * math.sin(g/10) * math.exp(-g/80)
+        avg = 0.3 + 0.35 * (1 - math.exp(-g / 50)) + 0.05 * math.sin(g / 10) * math.exp(-g / 80)
         best_fitness.append(best)
         avg_fitness.append(min(avg, best - 0.01))
 
